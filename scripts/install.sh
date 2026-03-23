@@ -1,8 +1,15 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-# OpenClaw Installer for macOS and Linux
-# Usage: curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install.sh | bash
+# OpenClaw Installer for macOS, Linux, and Alpine Linux
+# Usage: curl -fsSL --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/kurwero/openclaw/main/scripts/install.sh | bash
+
+# Ensure bash is available (Alpine ships ash by default)
+if [ -z "${BASH_VERSION:-}" ]; then
+    echo "ERROR: This installer requires bash. On Alpine, install it with: apk add bash"
+    echo "Then re-run the installer."
+    exit 1
+fi
 
 BOLD='\033[1m'
 ACCENT='\033[38;2;255;77;77m'       # coral-bright  #ff4d4d
@@ -128,8 +135,28 @@ gum_detect_arch() {
 verify_sha256sum_file() {
     local checksums="$1"
     if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum --ignore-missing -c "$checksums" >/dev/null 2>&1
-        return $?
+        # BusyBox sha256sum (Alpine) doesn't support --ignore-missing
+        if sha256sum --ignore-missing -c "$checksums" >/dev/null 2>&1; then
+            return 0
+        fi
+        # Fallback: filter checksum file to only include existing files
+        local filtered
+        filtered="$(mktemp)"
+        while IFS= read -r line; do
+            local fname
+            fname="$(echo "$line" | sed 's/^[^ ]* \+//' | sed 's/^\*//')"
+            if [[ -f "$fname" ]]; then
+                echo "$line" >> "$filtered"
+            fi
+        done < "$checksums"
+        if [[ -s "$filtered" ]]; then
+            sha256sum -c "$filtered" >/dev/null 2>&1
+            local rc=$?
+            rm -f "$filtered"
+            return $rc
+        fi
+        rm -f "$filtered"
+        return 1
     fi
     if command -v shasum >/dev/null 2>&1; then
         shasum -a 256 --ignore-missing -c "$checksums" >/dev/null 2>&1
@@ -253,20 +280,37 @@ print_installer_banner() {
 
 detect_os_or_die() {
     OS="unknown"
-    if [[ "$OSTYPE" == "darwin"* ]]; then
+    DISTRO="unknown"
+    if [[ "${OSTYPE:-}" == "darwin"* ]]; then
         OS="macos"
-    elif [[ "$OSTYPE" == "linux-gnu"* ]] || [[ -n "${WSL_DISTRO_NAME:-}" ]]; then
+    elif [[ "${OSTYPE:-}" == "linux-gnu"* ]] || [[ "${OSTYPE:-}" == "linux-musl"* ]] || [[ -n "${WSL_DISTRO_NAME:-}" ]]; then
         OS="linux"
+    elif [[ "$(uname -s 2>/dev/null)" == "Linux" ]]; then
+        OS="linux"
+    fi
+
+    # Detect Linux distribution
+    if [[ "$OS" == "linux" ]]; then
+        if [[ -f /etc/os-release ]]; then
+            # shellcheck disable=SC1091
+            DISTRO=$(. /etc/os-release && echo "${ID:-unknown}")
+        elif [[ -f /etc/alpine-release ]]; then
+            DISTRO="alpine"
+        fi
     fi
 
     if [[ "$OS" == "unknown" ]]; then
         ui_error "Unsupported operating system"
-        echo "This installer supports macOS and Linux (including WSL)."
-        echo "For Windows, use: iwr -useb https://openclaw.ai/install.ps1 | iex"
+        echo "This installer supports macOS and Linux (including WSL and Alpine)."
+        echo "For Windows, use: iwr -useb https://raw.githubusercontent.com/kurwero/openclaw/main/scripts/install.ps1 | iex"
         exit 1
     fi
 
-    ui_success "Detected: $OS"
+    if [[ "$DISTRO" == "alpine" ]]; then
+        ui_success "Detected: $OS (Alpine Linux)"
+    else
+        ui_success "Detected: $OS"
+    fi
 }
 
 ui_info() {
@@ -374,7 +418,7 @@ show_install_plan() {
 }
 
 show_footer_links() {
-    local faq_url="https://docs.openclaw.ai/start/faq"
+    local faq_url="https://github.com/kurwero/openclaw#faq"
     if [[ -n "$GUM" ]]; then
         local content
         content="$(printf '%s\n%s' "Need help?" "FAQ: ${faq_url}")"
@@ -983,7 +1027,7 @@ print_usage() {
 OpenClaw installer (macOS + Linux)
 
 Usage:
-  curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- [options]
+  curl -fsSL --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/kurwero/openclaw/main/scripts/install.sh | bash -s -- [options]
 
 Options:
   --install-method, --method npm|git   Install via npm (default) or from a git checkout
@@ -1015,11 +1059,11 @@ Environment variables:
   SHARP_IGNORE_GLOBAL_LIBVIPS=0|1    Default: 1 (avoid sharp building against global libvips)
 
 Examples:
-  curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install.sh | bash
-  curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- --no-onboard
-  curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- --no-onboard --verify
-  curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- --version main
-  curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- --install-method git --no-onboard
+  curl -fsSL --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/kurwero/openclaw/main/scripts/install.sh | bash
+  curl -fsSL --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/kurwero/openclaw/main/scripts/install.sh | bash -s -- --no-onboard
+  curl -fsSL --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/kurwero/openclaw/main/scripts/install.sh | bash -s -- --no-onboard --verify
+  curl -fsSL --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/kurwero/openclaw/main/scripts/install.sh | bash -s -- --version main
+  curl -fsSL --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/kurwero/openclaw/main/scripts/install.sh | bash -s -- --install-method git --no-onboard
 EOF
 }
 
@@ -1211,7 +1255,7 @@ print_homebrew_admin_fix() {
     echo "  2) Ask an Administrator to grant admin rights, then sign out/in:"
     echo "     sudo dseditgroup -o edit -a ${current_user} -t user admin"
     echo "Then retry:"
-    echo "  curl -fsSL https://openclaw.ai/install.sh | bash"
+    echo "  curl -fsSL https://raw.githubusercontent.com/kurwero/openclaw/main/scripts/install.sh | bash"
 }
 
 install_homebrew() {
@@ -1365,7 +1409,7 @@ ensure_default_node_active_shell() {
         echo "  nvm use ${NODE_DEFAULT_MAJOR}"
         echo "  nvm alias default ${NODE_DEFAULT_MAJOR}"
         echo "Then open a new shell and rerun:"
-        echo "  curl -fsSL https://openclaw.ai/install.sh | bash"
+        echo "  curl -fsSL https://raw.githubusercontent.com/kurwero/openclaw/main/scripts/install.sh | bash"
     else
         echo "Install/select Node.js ${NODE_DEFAULT_MAJOR} (or Node ${NODE_MIN_VERSION}+ minimum) and ensure it is first on PATH, then rerun installer."
     fi
@@ -1413,6 +1457,42 @@ install_node() {
             ui_success "Build tools installed"
         else
             ui_warn "Continuing without auto-installing build tools"
+        fi
+
+        # Alpine Linux: use apk (NodeSource doesn't support Alpine)
+        if command -v apk &> /dev/null; then
+            ui_info "Installing Node.js via apk (Alpine Linux)"
+            if is_root; then
+                run_quiet_step "Installing Node.js" apk add --no-cache nodejs npm
+            else
+                run_quiet_step "Installing Node.js" sudo apk add --no-cache nodejs npm
+            fi
+            # Check if the installed version meets the minimum requirement
+            local apk_node_major=""
+            apk_node_major="$(node_major_version || true)"
+            if [[ -n "$apk_node_major" ]] && [[ "$apk_node_major" -lt "$NODE_MIN_MAJOR" ]]; then
+                ui_warn "Alpine's default Node.js is v${apk_node_major}, which is below the required v${NODE_MIN_VERSION}+"
+                ui_info "Attempting to install Node.js from Alpine edge/community repository"
+                if is_root; then
+                    echo "https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories
+                    run_quiet_step "Updating package index" apk update
+                    run_quiet_step "Installing Node.js (edge)" apk add --no-cache nodejs npm
+                else
+                    echo "https://dl-cdn.alpinelinux.org/alpine/edge/community" | sudo tee -a /etc/apk/repositories > /dev/null
+                    run_quiet_step "Updating package index" sudo apk update
+                    run_quiet_step "Installing Node.js (edge)" sudo apk add --no-cache nodejs npm
+                fi
+                apk_node_major="$(node_major_version || true)"
+                if [[ -n "$apk_node_major" ]] && [[ "$apk_node_major" -lt "$NODE_MIN_MAJOR" ]]; then
+                    ui_warn "Could not install Node.js v${NODE_MIN_VERSION}+ via apk"
+                    ui_info "Consider installing Node.js manually via nvm or from https://nodejs.org"
+                    ui_info "  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.0/install.sh | bash"
+                    ui_info "  nvm install ${NODE_DEFAULT_MAJOR}"
+                fi
+            fi
+            ui_success "Node.js installed"
+            print_active_node_paths || true
+            return 0
         fi
 
         # Arch-based distros: use pacman with official repos
@@ -1524,7 +1604,13 @@ install_git() {
         run_quiet_step "Installing Git" brew install git
     elif [[ "$OS" == "linux" ]]; then
         require_sudo
-        if command -v apt-get &> /dev/null; then
+        if command -v apk &> /dev/null; then
+            if is_root; then
+                run_quiet_step "Installing Git" apk add --no-cache git
+            else
+                run_quiet_step "Installing Git" sudo apk add --no-cache git
+            fi
+        elif command -v apt-get &> /dev/null; then
             if is_root; then
                 run_quiet_step "Updating package index" apt-get update -qq
                 run_quiet_step "Installing Git" apt-get install -y -qq git
@@ -1580,7 +1666,7 @@ fix_npm_permissions() {
 
     # shellcheck disable=SC2016
     local path_line='export PATH="$HOME/.npm-global/bin:$PATH"'
-    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
         if [[ -f "$rc" ]] && ! grep -q ".npm-global" "$rc"; then
             echo "$path_line" >> "$rc"
         fi
@@ -1740,7 +1826,7 @@ ensure_user_local_bin_on_path() {
 
     # shellcheck disable=SC2016
     local path_line='export PATH="$HOME/.local/bin:$PATH"'
-    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
         if [[ -f "$rc" ]] && ! grep -q ".local/bin" "$rc"; then
             echo "$path_line" >> "$rc"
         fi
@@ -1884,7 +1970,7 @@ resolve_openclaw_bin() {
 
 install_openclaw_from_git() {
     local repo_dir="$1"
-    local repo_url="https://github.com/openclaw/openclaw.git"
+    local repo_url="https://github.com/kurwero/openclaw.git"
 
     if [[ -d "$repo_dir/.git" ]]; then
         ui_info "Installing OpenClaw from git checkout: ${repo_dir}"
@@ -1965,7 +2051,7 @@ resolve_package_install_spec() {
     local package_name="$1"
     local value="$2"
     if [[ "${value,,}" == "main" ]]; then
-        echo "github:openclaw/openclaw#main"
+        echo "github:kurwero/openclaw#main"
         return 0
     fi
     if is_explicit_package_install_spec "$value"; then
@@ -2452,7 +2538,7 @@ main() {
         ui_kv "Checkout" "$final_git_dir"
         ui_kv "Wrapper" "$HOME/.local/bin/openclaw"
         ui_kv "Update command" "openclaw update --restart"
-        ui_kv "Switch to npm" "curl -fsSL --proto '=https' --tlsv1.2 https://openclaw.ai/install.sh | bash -s -- --install-method npm"
+        ui_kv "Switch to npm" "curl -fsSL --proto '=https' --tlsv1.2 https://raw.githubusercontent.com/kurwero/openclaw/main/scripts/install.sh | bash -s -- --install-method npm"
     elif [[ "$is_upgrade" == "true" ]]; then
         ui_info "Upgrade complete"
         if [[ -r /dev/tty && -w /dev/tty ]]; then
