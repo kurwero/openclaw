@@ -11,6 +11,8 @@ if [ -z "${BASH_VERSION:-}" ]; then
     exit 1
 fi
 
+export NODE_OPTIONS="--max-old-space-size=2048 ${NODE_OPTIONS:-}"
+
 BOLD='\033[1m'
 ACCENT='\033[38;2;255;77;77m'       # coral-bright  #ff4d4d
 # shellcheck disable=SC2034
