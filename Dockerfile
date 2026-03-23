@@ -119,10 +119,10 @@ ARG OPENCLAW_DOCKER_APT_UPGRADE
 # OCI base-image metadata for downstream image consumers.
 # If you change these annotations, also update:
 # - docs/install/docker.md ("Base image metadata" section)
-# - https://docs.openclaw.ai/install/docker
-LABEL org.opencontainers.image.source="https://github.com/openclaw/openclaw" \
-  org.opencontainers.image.url="https://openclaw.ai" \
-  org.opencontainers.image.documentation="https://docs.openclaw.ai/install/docker" \
+# - https://github.com/kurwero/openclaw
+LABEL org.opencontainers.image.source="https://github.com/kurwero/openclaw" \
+  org.opencontainers.image.url="https://github.com/kurwero/openclaw" \
+  org.opencontainers.image.documentation="https://github.com/kurwero/openclaw" \
   org.opencontainers.image.licenses="MIT" \
   org.opencontainers.image.title="OpenClaw" \
   org.opencontainers.image.description="OpenClaw gateway and CLI runtime container image"
