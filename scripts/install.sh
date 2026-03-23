@@ -1462,9 +1462,12 @@ install_node() {
         # Alpine Linux: use apk (NodeSource doesn't support Alpine)
         if command -v apk &> /dev/null; then
             ui_info "Installing Node.js via apk (Alpine Linux)"
+            # Enable community repo (required for npm on Alpine)
             if is_root; then
+                sed -i -e '/community/s/^#//' /etc/apk/repositories || true
                 run_quiet_step "Installing Node.js" apk add --no-cache nodejs npm
             else
+                sudo sed -i -e '/community/s/^#//' /etc/apk/repositories || true
                 run_quiet_step "Installing Node.js" sudo apk add --no-cache nodejs npm
             fi
             # Check if the installed version meets the minimum requirement
